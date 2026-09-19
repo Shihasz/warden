@@ -60,13 +60,38 @@ type Client struct {
 	vulnBaseURL   string
 }
 
-// NewClient returns a Client targeting the real OSV.dev API.
-func NewClient() *Client {
-	return &Client{
+// ClientOption configures a Client.
+type ClientOption func(*Client)
+
+// WithHTTPClient overrides the http.Client used for requests.
+func WithHTTPClient(hc *http.Client) ClientOption {
+	return func(c *Client) { c.httpClient = hc }
+}
+
+// WithQueryBatchURL overrides the querybatch endpoint URL — mainly useful
+// for pointing at a test server or a private OSV-compatible mirror.
+func WithQueryBatchURL(url string) ClientOption {
+	return func(c *Client) { c.queryBatchURL = url }
+}
+
+// WithVulnBaseURL overrides the base URL used to fetch individual
+// vulnerability records (the vulnerability ID is appended directly).
+func WithVulnBaseURL(url string) ClientOption {
+	return func(c *Client) { c.vulnBaseURL = url }
+}
+
+// NewClient returns a Client targeting the real OSV.dev API by default;
+// apply options to override any of that.
+func NewClient(opts ...ClientOption) *Client {
+	c := &Client{
 		httpClient:    http.DefaultClient,
 		queryBatchURL: defaultQueryBatchURL,
 		vulnBaseURL:   defaultVulnBaseURL,
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 type indexedComponent struct {
