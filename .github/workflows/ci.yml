@@ -64,6 +64,13 @@ jobs:
         continue-on-error: true
         run: ./bin/warden scan --sbom sbom.json -o scan-results.json
 
+      - name: Check licenses
+        # Same reasoning as the vulnerability scan step: no unified policy
+        # engine exists yet to decide what should actually fail the
+        # build, so this is informational only for now.
+        continue-on-error: true
+        run: ./bin/warden licenses check --sbom sbom.json -o license-report.json
+
       - name: Upload supply-chain reports
         uses: actions/upload-artifact@v7
         with:
@@ -71,4 +78,5 @@ jobs:
           path: |
             sbom.json
             scan-results.json
+            license-report.json
           if-no-files-found: warn
