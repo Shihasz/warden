@@ -34,6 +34,9 @@ jobs:
   supply-chain-scan:
     runs-on: ubuntu-latest
     needs: build-test
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
@@ -71,6 +74,10 @@ jobs:
         continue-on-error: true
         run: ./bin/warden licenses check --sbom sbom.json -o license-report.json
 
+      - name: Sign provenance attestation
+        continue-on-error: true
+        run: ./bin/warden attest sign --artifact bin/warden --artifact-name warden
+
       - name: Upload supply-chain reports
         uses: actions/upload-artifact@v7
         with:
@@ -79,4 +86,6 @@ jobs:
             sbom.json
             scan-results.json
             license-report.json
+            bin/warden.intoto.jsonl
+            bin/warden.intoto.jsonl.pub
           if-no-files-found: warn
