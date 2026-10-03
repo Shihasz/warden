@@ -5,7 +5,9 @@ package dsse
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 )
@@ -95,4 +97,13 @@ func Verify(env *Envelope, pub ed25519.PublicKey) ([]byte, error) {
 	}
 
 	return nil, fmt.Errorf("no valid signature found for the given public key")
+}
+
+// KeyID derives a short, stable hint identifying pub, as the hex
+// encoding of its SHA-256 hash. Per the DSSE spec this is only an
+// unauthenticated hint for a verifier to pick which key to check
+// against — it carries no security weight on its own.
+func KeyID(pub ed25519.PublicKey) string {
+	sum := sha256.Sum256(pub)
+	return hex.EncodeToString(sum[:])
 }
