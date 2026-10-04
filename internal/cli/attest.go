@@ -27,6 +27,7 @@ func newAttestCmd() *cobra.Command {
 		Short: "Build and sign provenance attestations",
 	}
 	cmd.AddCommand(newAttestSignCmd())
+	cmd.AddCommand(newAttestVerifyCmd())
 	return cmd
 }
 
