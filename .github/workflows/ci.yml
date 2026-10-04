@@ -78,6 +78,16 @@ jobs:
         continue-on-error: true
         run: ./bin/warden attest sign --artifact bin/warden --artifact-name warden
 
+      - name: Verify provenance attestation
+        continue-on-error: true
+        run: |
+          ./bin/warden attest verify \
+            --attestation bin/warden.intoto.jsonl \
+            --pubkey bin/warden.intoto.jsonl.pub \
+            --artifact bin/warden \
+            --expect-repository https://github.com/${{ github.repository }} \
+            --expect-ref ${{ github.ref }}
+
       - name: Upload supply-chain reports
         uses: actions/upload-artifact@v7
         with:
