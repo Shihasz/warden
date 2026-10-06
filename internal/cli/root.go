@@ -24,6 +24,7 @@ func NewRootCmd(version string) *cobra.Command {
 	root.AddCommand(newScanCmd())
 	root.AddCommand(newLicensesCmd())
 	root.AddCommand(newAttestCmd())
+	root.AddCommand(newPolicyCmd())
 
 	return root
 }
