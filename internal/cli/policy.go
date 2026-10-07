@@ -129,7 +129,7 @@ func runPolicyCheck(cmd *cobra.Command, opts *policyCheckOptions) error {
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warden: skipped license lookup for %s@%s: %s\n", s.Component.Name, s.Component.Version, s.Reason)
 	}
 
-	provInput, err := loadProvenanceInput(opts)
+	provInput, err := loadProvenanceInput(cmd, opts)
 	if err != nil {
 		return fmt.Errorf("load provenance attestation: %w", err)
 	}
@@ -173,7 +173,7 @@ func runPolicyCheck(cmd *cobra.Command, opts *policyCheckOptions) error {
 // should fail the check is the policy's decision (via
 // provenance.required), not this loader's. A genuinely unreadable file
 // path, by contrast, is a configuration mistake and stays a hard error.
-func loadProvenanceInput(opts *policyCheckOptions) (policy.ProvenanceInput, error) {
+func loadProvenanceInput(cmd *cobra.Command, opts *policyCheckOptions) (policy.ProvenanceInput, error) {
 	if opts.attestationPath == "" {
 		return policy.ProvenanceInput{Verified: false}, nil
 	}
@@ -200,16 +200,19 @@ func loadProvenanceInput(opts *policyCheckOptions) (policy.ProvenanceInput, erro
 
 		var env dsse.Envelope
 		if err := json.Unmarshal([]byte(line), &env); err != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warden: provenance unverified: malformed attestation line: %v\n", err)
 			return policy.ProvenanceInput{Verified: false}, nil
 		}
 
 		stmt, err := attest.VerifyEnvelope(&env, pub)
 		if err != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warden: provenance unverified: %v\n", err)
 			return policy.ProvenanceInput{Verified: false}, nil
 		}
 
 		if opts.artifactPath != "" {
 			if err := stmt.CheckArtifactDigest(opts.artifactPath); err != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warden: provenance unverified: %v\n", err)
 				return policy.ProvenanceInput{Verified: false}, nil
 			}
 		}
@@ -217,5 +220,6 @@ func loadProvenanceInput(opts *policyCheckOptions) (policy.ProvenanceInput, erro
 		return policy.ProvenanceInput{Verified: true, Statement: stmt}, nil
 	}
 
+	_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "warden: provenance unverified: attestation file had no entries")
 	return policy.ProvenanceInput{Verified: false}, nil
 }

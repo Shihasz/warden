@@ -1,0 +1,15 @@
+version: 1
+
+vulnerabilities:
+  denySeverity: critical
+  requireKnownExploit: true
+
+licenses:
+  denyCategories:
+    - copyleft
+
+provenance:
+  required: true
+  minLevel: 2
+  expectedRepository: "https://github.com/Shihasz/warden"
+  expectedRef: "refs/heads/main"
