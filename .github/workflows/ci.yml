@@ -59,18 +59,11 @@ jobs:
           restore-keys: |
             kev-catalog-
 
-      - name: Scan for known vulnerabilities
-        # No policy engine exists yet to decide what should actually fail
-        # the build, so this step is informational for now — findings are
-        # uploaded as an artifact, not enforced. continue-on-error is
-        # removed once real policy evaluation lands.
+      - name: Scan for known vulnerabilities (report)
         continue-on-error: true
         run: ./bin/warden scan --sbom sbom.json -o scan-results.json
 
-      - name: Check licenses
-        # Same reasoning as the vulnerability scan step: no unified policy
-        # engine exists yet to decide what should actually fail the
-        # build, so this is informational only for now.
+      - name: Check licenses (report)
         continue-on-error: true
         run: ./bin/warden licenses check --sbom sbom.json -o license-report.json
 
@@ -78,7 +71,7 @@ jobs:
         continue-on-error: true
         run: ./bin/warden attest sign --artifact bin/warden --artifact-name warden
 
-      - name: Verify provenance attestation
+      - name: Verify provenance attestation (sanity check)
         continue-on-error: true
         run: |
           ./bin/warden attest verify \
@@ -88,7 +81,18 @@ jobs:
             --expect-repository https://github.com/${{ github.repository }} \
             --expect-ref ${{ github.ref }}
 
+      - name: Enforce supply-chain policy
+        run: |
+          ./bin/warden policy check \
+            --sbom sbom.json \
+            --policy warden-policy.yaml \
+            --attestation bin/warden.intoto.jsonl \
+            --pubkey bin/warden.intoto.jsonl.pub \
+            --artifact bin/warden \
+            -o policy-result.json
+
       - name: Upload supply-chain reports
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: supply-chain-reports
@@ -98,4 +102,5 @@ jobs:
             license-report.json
             bin/warden.intoto.jsonl
             bin/warden.intoto.jsonl.pub
+            policy-result.json
           if-no-files-found: warn
