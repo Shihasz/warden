@@ -1,0 +1,19 @@
+# Policy applied to pull_request runs. Identical to warden-policy.yaml
+# except it does not pin expectedRef: on a pull_request event the OIDC
+# token's ref claim is refs/pull/<n>/merge, never refs/heads/main, so
+# pinning the ref would fail every PR. The repository is still pinned,
+# and provenance is still required at the same minimum level.
+version: 1
+
+vulnerabilities:
+  denySeverity: critical
+  requireKnownExploit: true
+
+licenses:
+  denyCategories:
+    - copyleft
+
+provenance:
+  required: true
+  minLevel: 2
+  expectedRepository: "https://github.com/Shihasz/warden"

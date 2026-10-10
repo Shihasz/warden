@@ -82,10 +82,19 @@ jobs:
             --expect-ref ${{ github.ref }}
 
       - name: Enforce supply-chain policy
+        # This is the real gate, so there is no continue-on-error. Pull
+        # requests use a policy without the branch-ref pin, because their
+        # OIDC ref claim is refs/pull/<n>/merge rather than refs/heads/main.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
         run: |
+          POLICY=warden-policy.yaml
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            POLICY=warden-policy-pr.yaml
+          fi
           ./bin/warden policy check \
             --sbom sbom.json \
-            --policy warden-policy.yaml \
+            --policy "$POLICY" \
             --attestation bin/warden.intoto.jsonl \
             --pubkey bin/warden.intoto.jsonl.pub \
             --artifact bin/warden \
