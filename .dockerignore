@@ -1,0 +1,12 @@
+.git
+.github
+bin
+dist
+
+# Generated reports and attestations never belong in the build context
+sbom.json
+scan-results.json
+license-report.json
+policy-result.json
+*.intoto.jsonl
+*.intoto.jsonl.pub
