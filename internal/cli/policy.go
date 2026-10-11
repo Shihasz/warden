@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 	"time"
@@ -166,19 +168,23 @@ func runPolicyCheck(cmd *cobra.Command, opts *policyCheckOptions) error {
 	return nil
 }
 
-// loadProvenanceInput verifies the attestation named by opts, if any. A
-// verification failure (bad signature, artifact digest mismatch, or a
-// malformed file) is reported as an unverified ProvenanceInput rather
-// than aborting the command outright: whether missing/invalid provenance
-// should fail the check is the policy's decision (via
-// provenance.required), not this loader's. A genuinely unreadable file
-// path, by contrast, is a configuration mistake and stays a hard error.
+// loadProvenanceInput verifies the attestation named by opts, if any.
+// Anything that means "there is no verifiable provenance" (a missing
+// attestation or public key file, a bad signature, an artifact digest
+// mismatch, or a malformed file) is reported as an unverified
+// ProvenanceInput rather than aborting the command: whether missing or
+// invalid provenance should fail the check is the policy's decision (via
+// provenance.required), not this loader's. Other I/O failures, such as
+// permission errors, are configuration mistakes and stay hard errors.
 func loadProvenanceInput(cmd *cobra.Command, opts *policyCheckOptions) (policy.ProvenanceInput, error) {
 	if opts.attestationPath == "" {
 		return policy.ProvenanceInput{Verified: false}, nil
 	}
 
 	pubPEM, err := os.ReadFile(opts.pubKeyPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return unverified(cmd, "public key file not found: %s", opts.pubKeyPath), nil
+	}
 	if err != nil {
 		return policy.ProvenanceInput{}, fmt.Errorf("read public key file: %w", err)
 	}
@@ -188,6 +194,9 @@ func loadProvenanceInput(cmd *cobra.Command, opts *policyCheckOptions) (policy.P
 	}
 
 	data, err := os.ReadFile(opts.attestationPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return unverified(cmd, "attestation file not found: %s", opts.attestationPath), nil
+	}
 	if err != nil {
 		return policy.ProvenanceInput{}, fmt.Errorf("read attestation file: %w", err)
 	}
@@ -200,26 +209,29 @@ func loadProvenanceInput(cmd *cobra.Command, opts *policyCheckOptions) (policy.P
 
 		var env dsse.Envelope
 		if err := json.Unmarshal([]byte(line), &env); err != nil {
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warden: provenance unverified: malformed attestation line: %v\n", err)
-			return policy.ProvenanceInput{Verified: false}, nil
+			return unverified(cmd, "malformed attestation line: %v", err), nil
 		}
 
 		stmt, err := attest.VerifyEnvelope(&env, pub)
 		if err != nil {
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warden: provenance unverified: %v\n", err)
-			return policy.ProvenanceInput{Verified: false}, nil
+			return unverified(cmd, "%v", err), nil
 		}
 
 		if opts.artifactPath != "" {
 			if err := stmt.CheckArtifactDigest(opts.artifactPath); err != nil {
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warden: provenance unverified: %v\n", err)
-				return policy.ProvenanceInput{Verified: false}, nil
+				return unverified(cmd, "%v", err), nil
 			}
 		}
 
 		return policy.ProvenanceInput{Verified: true, Statement: stmt}, nil
 	}
 
-	_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "warden: provenance unverified: attestation file had no entries")
-	return policy.ProvenanceInput{Verified: false}, nil
+	return unverified(cmd, "attestation file had no entries"), nil
+}
+
+// unverified reports why provenance could not be verified on stderr and
+// returns the corresponding unverified ProvenanceInput.
+func unverified(cmd *cobra.Command, format string, args ...any) policy.ProvenanceInput {
+	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warden: provenance unverified: "+format+"\n", args...)
+	return policy.ProvenanceInput{Verified: false}
 }
