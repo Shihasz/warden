@@ -75,18 +75,26 @@ func parse(data []byte) (*Catalog, error) {
 	return &c, nil
 }
 
+// Warnf reports a non-fatal problem encountered while loading the
+// catalog. A nil Warnf discards warnings.
+type Warnf func(format string, args ...any)
+
 // FetchAndCache returns the KEV catalog, using cachePath as a local cache.
 // If cachePath is missing or older than maxAge, it's fetched fresh from
 // FeedURL and the cache is overwritten; otherwise the cached copy is used
 // as-is, with no network call at all.
-func FetchAndCache(ctx context.Context, cachePath string, maxAge time.Duration) (*Catalog, error) {
-	return fetchAndCache(ctx, FeedURL, cachePath, maxAge)
+//
+// The cache is best-effort: if it can't be written (a read-only
+// filesystem, for example), the freshly fetched catalog is still returned
+// and the problem is reported through warnf.
+func FetchAndCache(ctx context.Context, cachePath string, maxAge time.Duration, warnf Warnf) (*Catalog, error) {
+	return fetchAndCache(ctx, FeedURL, cachePath, maxAge, warnf)
 }
 
 // fetchAndCache is the testable core of FetchAndCache — it takes the feed
 // URL as a parameter so tests can point it at an httptest.Server instead
 // of CISA's real endpoint.
-func fetchAndCache(ctx context.Context, url, cachePath string, maxAge time.Duration) (*Catalog, error) {
+func fetchAndCache(ctx context.Context, url, cachePath string, maxAge time.Duration, warnf Warnf) (*Catalog, error) {
 	info, statErr := os.Stat(cachePath)
 	stale := statErr != nil || time.Since(info.ModTime()) > maxAge
 
@@ -106,14 +114,23 @@ func fetchAndCache(ctx context.Context, url, cachePath string, maxAge time.Durat
 		return nil, fmt.Errorf("fetch KEV catalog: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
-		return nil, fmt.Errorf("create cache directory: %w", err)
-	}
-	if err := os.WriteFile(cachePath, data, 0o644); err != nil {
-		return nil, fmt.Errorf("write KEV cache file: %w", err)
+	// The cache is an optimization, so failing to write it must not
+	// discard a catalog we already have in hand.
+	if err := writeCache(cachePath, data); err != nil && warnf != nil {
+		warnf("could not cache the KEV catalog at %s: %v (continuing without caching)", cachePath, err)
 	}
 
 	return parse(data)
+}
+
+func writeCache(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create cache directory: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write cache file: %w", err)
+	}
+	return nil
 }
 
 func fetch(ctx context.Context, url string) ([]byte, error) {
