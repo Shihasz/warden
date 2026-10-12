@@ -78,7 +78,7 @@ func runScan(cmd *cobra.Command, opts *scanOptions) error {
 		if opts.kevFile != "" {
 			catalog, err = kev.LoadFile(opts.kevFile)
 		} else {
-			catalog, err = kev.FetchAndCache(ctx, opts.kevCache, opts.kevMaxAge)
+			catalog, err = kev.FetchAndCache(ctx, opts.kevCache, opts.kevMaxAge, stderrWarnf(cmd))
 		}
 		if err != nil {
 			return fmt.Errorf("load KEV catalog: %w", err)
