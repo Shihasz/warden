@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Shihasz/warden/internal/httpclient"
 	"github.com/Shihasz/warden/internal/sbom"
 )
 
@@ -61,7 +62,7 @@ func WithBaseURL(url string) ClientOption {
 
 // NewClient returns a Client targeting the real deps.dev API by default.
 func NewClient(opts ...ClientOption) *Client {
-	c := &Client{httpClient: http.DefaultClient, baseURL: defaultBaseURL}
+	c := &Client{httpClient: httpclient.New(), baseURL: defaultBaseURL}
 	for _, opt := range opts {
 		opt(c)
 	}

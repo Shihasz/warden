@@ -1,19 +1,18 @@
 package cli
 
 import (
-	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 
+	"github.com/Shihasz/warden/internal/httpclient"
 	"github.com/Shihasz/warden/internal/provenance/attest"
 	"github.com/Shihasz/warden/internal/provenance/dsse"
 	"github.com/Shihasz/warden/internal/provenance/oidc"
@@ -91,14 +90,16 @@ func runAttestSign(cmd *cobra.Command, opts *attestSignOptions) error {
 		pubKeyOutput = output + ".pub"
 	}
 
-	ctx := context.Background()
+	ctx, cancel := commandContext(cmd)
+	defer cancel()
+	httpc := httpclient.New()
 
-	token, err := oidc.FetchToken(ctx, http.DefaultClient, opts.audience)
+	token, err := oidc.FetchToken(ctx, httpc, opts.audience)
 	if err != nil {
 		return fmt.Errorf("fetch OIDC token: %w", err)
 	}
 
-	jwks, err := oidc.FetchJWKS(ctx, http.DefaultClient)
+	jwks, err := oidc.FetchJWKS(ctx, httpc)
 	if err != nil {
 		return fmt.Errorf("fetch GitHub's JWKS: %w", err)
 	}

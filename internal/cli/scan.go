@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -71,7 +70,8 @@ func runScan(cmd *cobra.Command, opts *scanOptions) error {
 		return fmt.Errorf("SBOM file %s has no components to scan", opts.sbomPath)
 	}
 
-	ctx := context.Background()
+	ctx, cancel := commandContext(cmd)
+	defer cancel()
 
 	var catalog *kev.Catalog
 	if !opts.noKEV {

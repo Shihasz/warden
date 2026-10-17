@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Shihasz/warden/internal/httpclient"
 	"github.com/Shihasz/warden/internal/sbom"
 )
 
@@ -84,7 +85,7 @@ func WithVulnBaseURL(url string) ClientOption {
 // apply options to override any of that.
 func NewClient(opts ...ClientOption) *Client {
 	c := &Client{
-		httpClient:    http.DefaultClient,
+		httpClient:    httpclient.New(),
 		queryBatchURL: defaultQueryBatchURL,
 		vulnBaseURL:   defaultVulnBaseURL,
 	}
