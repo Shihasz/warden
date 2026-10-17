@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -99,7 +98,8 @@ func runPolicyCheck(cmd *cobra.Command, opts *policyCheckOptions) error {
 		return fmt.Errorf("SBOM file %s has no components to evaluate", opts.sbomPath)
 	}
 
-	ctx := context.Background()
+	ctx, cancel := commandContext(cmd)
+	defer cancel()
 
 	var catalog *kev.Catalog
 	if !opts.noKEV {

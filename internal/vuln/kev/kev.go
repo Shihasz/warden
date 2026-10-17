@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/Shihasz/warden/internal/httpclient"
 )
 
 // FeedURL is CISA's official, no-auth-required KEV catalog feed.
@@ -190,13 +192,17 @@ func writeCacheAtomic(path string, data []byte) error {
 	return nil
 }
 
+// httpClient is a package variable so tests can substitute a client with a
+// short timeout. It always has a timeout; http.DefaultClient never does.
+var httpClient = httpclient.New()
+
 func fetch(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

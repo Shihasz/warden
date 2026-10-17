@@ -20,6 +20,8 @@ func NewRootCmd(version string) *cobra.Command {
 		SilenceUsage:  true,
 	}
 
+	root.PersistentFlags().Duration("timeout", defaultCommandTimeout, "maximum total run time for the command, e.g. 90s or 5m (0 disables the limit)")
+
 	root.AddCommand(newSBOMCmd())
 	root.AddCommand(newScanCmd())
 	root.AddCommand(newLicensesCmd())

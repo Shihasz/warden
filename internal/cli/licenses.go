@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -80,7 +79,8 @@ func runLicensesCheck(cmd *cobra.Command, opts *licensesCheckOptions) error {
 		deny[classify.Category(c)] = true
 	}
 
-	ctx := context.Background()
+	ctx, cancel := commandContext(cmd)
+	defer cancel()
 	client := depsdev.NewClient()
 	results, skipped, err := client.Lookup(ctx, bom.Components)
 	if err != nil {
