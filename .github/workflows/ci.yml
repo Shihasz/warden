@@ -113,3 +113,30 @@ jobs:
             bin/warden.intoto.jsonl.pub
             policy-result.json
           if-no-files-found: warn
+
+  docker-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build image
+        run: make docker-build VERSION=ci-test
+
+      - name: Smoke test image
+        run: |
+          set -euo pipefail
+
+          # The version injected via -ldflags must reach the binary.
+          test "$(docker run --rm warden:dev --version)" = "warden version ci-test"
+
+          # The image must run as the unprivileged user, never root.
+          test "$(docker image inspect warden:dev --format '{{.Config.User}}')" = "65532:65532"
+
+          # The image must work under a hardened runtime: read-only root
+          # filesystem, no network, project mounted read-only.
+          docker run --rm --read-only --network none \
+            -v "$PWD":/work:ro -w /work warden:dev \
+            sbom generate --go-mod go.mod --go-sum go.sum --name warden \
+            > "$RUNNER_TEMP/sbom.json"
+          grep -q '"bomFormat": "CycloneDX"' "$RUNNER_TEMP/sbom.json"
