@@ -11,6 +11,7 @@ permissions:
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
@@ -22,6 +23,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
@@ -33,6 +35,7 @@ jobs:
 
   supply-chain-scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: build-test
     permissions:
       contents: read
