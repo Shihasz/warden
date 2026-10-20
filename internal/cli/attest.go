@@ -33,7 +33,6 @@ func newAttestCmd() *cobra.Command {
 type attestSignOptions struct {
 	artifactPath string
 	artifactName string
-	audience     string
 	output       string
 	pubKeyOutput string
 }
@@ -44,16 +43,15 @@ func newAttestSignCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sign",
 		Short: "Build a SLSA provenance statement for an artifact and sign it",
-		Long: "Fetches and verifies a GitHub Actions OIDC token to establish who is\n" +
-			"running this build, builds a SLSA v1 provenance statement from that\n" +
-			"verified identity, and signs it in a DSSE envelope using a fresh,\n" +
-			"ephemeral ed25519 key generated for this run only.\n\n" +
-			"The signing key is never persisted or reused across runs. Trust in\n" +
-			"the attestation comes from the OIDC-verified claims recorded inside\n" +
-			"the provenance statement itself (which repository, which workflow,\n" +
-			"which commit) — not from the signing key's identity. The public key\n" +
-			"is written alongside the signature so a verifier can confirm the\n" +
-			"envelope wasn't altered after this signing operation.\n\n" +
+		Long: "Generates a fresh, ephemeral ed25519 key for this run only, then\n" +
+			"requests a GitHub Actions OIDC token whose audience is that key's\n" +
+			"fingerprint. GitHub signs the token, so it proves, to anyone who later\n" +
+			"checks it against GitHub's published keys, that a specific repository\n" +
+			"and workflow run asked for exactly this key.\n\n" +
+			"The token is verified here and embedded in a SLSA v1 provenance\n" +
+			"statement, which is signed with the ephemeral key in a DSSE envelope.\n" +
+			"The key is never persisted or reused across runs; its public half is\n" +
+			"written alongside the attestation.\n\n" +
 			"Only runs inside a GitHub Actions job granted 'permissions: id-token: write'.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAttestSign(cmd, opts)
@@ -63,7 +61,6 @@ func newAttestSignCmd() *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&opts.artifactPath, "artifact", "", "path to the build artifact to attest (required)")
 	f.StringVar(&opts.artifactName, "artifact-name", "", "name recorded for the artifact (defaults to its base filename)")
-	f.StringVar(&opts.audience, "audience", "warden", "OIDC audience to request the token for; a verifier must check for the same value")
 	f.StringVarP(&opts.output, "output", "o", "", "path to write the signed DSSE envelope (defaults to <artifact>.intoto.jsonl)")
 	f.StringVar(&opts.pubKeyOutput, "pubkey-output", "", "path to write the ephemeral public key as PEM (defaults to <output>.pub)")
 
@@ -94,7 +91,15 @@ func runAttestSign(cmd *cobra.Command, opts *attestSignOptions) error {
 	defer cancel()
 	httpc := httpclient.New()
 
-	token, err := oidc.FetchToken(ctx, httpc, opts.audience)
+	// The key must exist before the token is requested: its fingerprint
+	// becomes the token's audience, which is what binds the two together.
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return fmt.Errorf("generate ephemeral signing key: %w", err)
+	}
+	audience := attest.BindingAudience(pub)
+
+	token, err := oidc.FetchToken(ctx, httpc, audience)
 	if err != nil {
 		return fmt.Errorf("fetch OIDC token: %w", err)
 	}
@@ -104,7 +109,7 @@ func runAttestSign(cmd *cobra.Command, opts *attestSignOptions) error {
 		return fmt.Errorf("fetch GitHub's JWKS: %w", err)
 	}
 
-	claims, err := oidc.Verify(token, jwks, oidc.VerifyOptions{ExpectedAudience: opts.audience})
+	claims, err := oidc.Verify(token, jwks, oidc.VerifyOptions{ExpectedAudience: audience})
 	if err != nil {
 		return fmt.Errorf("verify OIDC token: %w", err)
 	}
@@ -112,6 +117,7 @@ func runAttestSign(cmd *cobra.Command, opts *attestSignOptions) error {
 	stmt, err := attest.BuildStatement(claims, attest.BuildOptions{
 		ArtifactPath: opts.artifactPath,
 		ArtifactName: artifactName,
+		OIDCToken:    token,
 	})
 	if err != nil {
 		return fmt.Errorf("build provenance statement: %w", err)
@@ -120,11 +126,6 @@ func runAttestSign(cmd *cobra.Command, opts *attestSignOptions) error {
 	payload, err := json.Marshal(stmt)
 	if err != nil {
 		return fmt.Errorf("marshal provenance statement: %w", err)
-	}
-
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return fmt.Errorf("generate ephemeral signing key: %w", err)
 	}
 
 	env, err := dsse.Sign(inTotoPayloadType, payload, priv, dsse.KeyID(pub))

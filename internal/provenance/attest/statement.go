@@ -59,17 +59,23 @@ type BuildDefinition struct {
 	ResolvedDependencies []ResourceDescriptor `json:"resolvedDependencies,omitempty"`
 }
 
-// ResourceDescriptor identifies a resource the build depended on — here,
-// the source commit that was built.
+// ResourceDescriptor identifies a resource: a dependency the build used,
+// or a byproduct it produced.
 type ResourceDescriptor struct {
-	URI    string            `json:"uri,omitempty"`
-	Digest map[string]string `json:"digest,omitempty"`
+	URI       string            `json:"uri,omitempty"`
+	Digest    map[string]string `json:"digest,omitempty"`
+	Name      string            `json:"name,omitempty"`
+	MediaType string            `json:"mediaType,omitempty"`
+	// Content is base64-encoded on the wire, as the SLSA spec requires;
+	// encoding/json does that automatically for []byte.
+	Content []byte `json:"content,omitempty"`
 }
 
 // RunDetails describes the specific build run.
 type RunDetails struct {
-	Builder  Builder       `json:"builder"`
-	Metadata BuildMetadata `json:"metadata,omitempty"`
+	Builder    Builder              `json:"builder"`
+	Metadata   BuildMetadata        `json:"metadata,omitempty"`
+	Byproducts []ResourceDescriptor `json:"byproducts,omitempty"`
 }
 
 // Builder identifies the entity that ran the build.
@@ -92,6 +98,9 @@ type BuildOptions struct {
 	// ArtifactName is the name recorded for the subject — typically just
 	// the artifact's base filename.
 	ArtifactName string
+	// OIDCToken, if set, is the GitHub Actions OIDC token to embed as a
+	// byproduct, so a verifier can check GitHub's signature on it.
+	OIDCToken string
 	// Now is used for the statement's startedOn timestamp; defaults to
 	// time.Now if zero. Overridable so tests don't depend on wall-clock
 	// time.
@@ -153,6 +162,14 @@ func BuildStatement(claims *oidc.Claims, opts BuildOptions) (*Statement, error) 
 				},
 			},
 		},
+	}
+
+	if opts.OIDCToken != "" {
+		stmt.Predicate.RunDetails.Byproducts = []ResourceDescriptor{{
+			Name:      OIDCTokenName,
+			MediaType: OIDCTokenMediaType,
+			Content:   []byte(opts.OIDCToken),
+		}}
 	}
 
 	return stmt, nil
