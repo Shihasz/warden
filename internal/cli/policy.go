@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,6 +42,7 @@ type policyCheckOptions struct {
 	pubKeyPath      string
 	artifactPath    string
 	output          string
+	jwksFile        string
 }
 
 func newPolicyCheckCmd() *cobra.Command {
@@ -69,6 +71,7 @@ func newPolicyCheckCmd() *cobra.Command {
 	f.StringVar(&opts.pubKeyPath, "pubkey", "", "path to the PEM-encoded public key matching --attestation (required if --attestation is set)")
 	f.StringVar(&opts.artifactPath, "artifact", "", "path to the build artifact; if set alongside --attestation, its digest is checked against the attestation's subject")
 	f.StringVarP(&opts.output, "output", "o", "", "output file path for the policy result (defaults to stdout)")
+	f.StringVar(&opts.jwksFile, "jwks-file", "", "path to a JWKS JSON file used to check the attestation's OIDC token, instead of fetching GitHub's published keys")
 
 	_ = cmd.MarkFlagRequired("sbom")
 	_ = cmd.MarkFlagRequired("policy")
@@ -131,7 +134,7 @@ func runPolicyCheck(cmd *cobra.Command, opts *policyCheckOptions) error {
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warden: skipped license lookup for %s@%s: %s\n", s.Component.Name, s.Component.Version, s.Reason)
 	}
 
-	provInput, err := loadProvenanceInput(cmd, opts)
+	provInput, err := loadProvenanceInput(ctx, cmd, opts)
 	if err != nil {
 		return fmt.Errorf("load provenance attestation: %w", err)
 	}
@@ -169,14 +172,14 @@ func runPolicyCheck(cmd *cobra.Command, opts *policyCheckOptions) error {
 }
 
 // loadProvenanceInput verifies the attestation named by opts, if any.
-// Anything that means "there is no verifiable provenance" (a missing
-// attestation or public key file, a bad signature, an artifact digest
-// mismatch, or a malformed file) is reported as an unverified
-// ProvenanceInput rather than aborting the command: whether missing or
-// invalid provenance should fail the check is the policy's decision (via
-// provenance.required), not this loader's. Other I/O failures, such as
-// permission errors, are configuration mistakes and stay hard errors.
-func loadProvenanceInput(cmd *cobra.Command, opts *policyCheckOptions) (policy.ProvenanceInput, error) {
+// "Verified" here means the full chain: valid signature, matching
+// artifact digest, and a signing key bound to a GitHub-signed identity
+// that agrees with the statement. Anything that means "there is no
+// verifiable provenance" is reported as an unverified ProvenanceInput
+// rather than aborting: whether that fails the gate is the policy's
+// decision (via provenance.required). Configuration mistakes, such as an
+// unreadable file or a bad --jwks-file, stay hard errors.
+func loadProvenanceInput(ctx context.Context, cmd *cobra.Command, opts *policyCheckOptions) (policy.ProvenanceInput, error) {
 	if opts.attestationPath == "" {
 		return policy.ProvenanceInput{Verified: false}, nil
 	}
@@ -221,6 +224,23 @@ func loadProvenanceInput(cmd *cobra.Command, opts *policyCheckOptions) (policy.P
 			if err := stmt.CheckArtifactDigest(opts.artifactPath); err != nil {
 				return unverified(cmd, "%v", err), nil
 			}
+		}
+
+		// A valid signature alone proves nothing about identity: anyone
+		// can sign a statement claiming any repository. The gate requires
+		// the key to be bound to a GitHub-signed identity.
+		if !stmt.HasOIDCToken() {
+			return unverified(cmd, "%v", attest.ErrNoOIDCToken), nil
+		}
+		keys, err := loadJWKS(ctx, opts.jwksFile)
+		if err != nil {
+			if opts.jwksFile != "" {
+				return policy.ProvenanceInput{}, err
+			}
+			return unverified(cmd, "could not fetch GitHub's published keys to check the attestation's identity: %v", err), nil
+		}
+		if _, err := stmt.VerifyBinding(pub, keys); err != nil {
+			return unverified(cmd, "%v", err), nil
 		}
 
 		return policy.ProvenanceInput{Verified: true, Statement: stmt}, nil

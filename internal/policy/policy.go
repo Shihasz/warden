@@ -50,7 +50,8 @@ type LicensePolicy struct {
 // hermeticity) warden does not assess:
 //
 //	0 = no valid attestation (missing, unsigned, or fails verification)
-//	1 = signature, artifact digest, and build identity all verified
+//	1 = signature and artifact digest verified, and the signing key bound
+//	    to a GitHub-signed build identity (see Statement.VerifyBinding)
 //	2 = level 1, AND the build ran on a GitHub-hosted (not self-hosted) runner
 type ProvenancePolicy struct {
 	Required           bool   `yaml:"required"`

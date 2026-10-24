@@ -68,6 +68,18 @@ func fetchJWKS(ctx context.Context, httpClient *http.Client, jwksURL string) (*J
 	return &set, nil
 }
 
+// ParseJWKS parses a JWKS document, for example one read from a file.
+func ParseJWKS(data []byte) (*JWKS, error) {
+	var set JWKS
+	if err := json.Unmarshal(data, &set); err != nil {
+		return nil, fmt.Errorf("parse JWKS: %w", err)
+	}
+	if len(set.Keys) == 0 {
+		return nil, fmt.Errorf("JWKS contains no keys")
+	}
+	return &set, nil
+}
+
 // publicKey finds the key with the given kid and decodes it into an RSA
 // public key.
 func (j *JWKS) publicKey(kid string) (*rsa.PublicKey, error) {
@@ -133,6 +145,11 @@ type Claims struct {
 type VerifyOptions struct {
 	// ExpectedAudience, if set, must match the token's aud claim exactly.
 	ExpectedAudience string
+	// AllowExpired skips the exp check. Use it only when a token is being
+	// verified as a historical record (proof that GitHub signed these
+	// claims for this audience) rather than as a bearer credential.
+	// Signature, issuer, not-before, and audience are still enforced.
+	AllowExpired bool
 	// Now is used for expiry/not-before checks; defaults to time.Now if
 	// zero. Overridable so tests don't depend on wall-clock time.
 	Now time.Time
@@ -196,7 +213,7 @@ func Verify(tokenString string, jwks *JWKS, opts VerifyOptions) (*Claims, error)
 	if now.IsZero() {
 		now = time.Now()
 	}
-	if claims.ExpiresAt != 0 && now.Unix() >= claims.ExpiresAt {
+	if !opts.AllowExpired && claims.ExpiresAt != 0 && now.Unix() >= claims.ExpiresAt {
 		return nil, fmt.Errorf("token expired at %s", time.Unix(claims.ExpiresAt, 0).UTC())
 	}
 	if claims.NotBefore != 0 && now.Unix() < claims.NotBefore {

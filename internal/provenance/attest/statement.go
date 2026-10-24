@@ -21,8 +21,7 @@ const StatementType = "https://in-toto.io/Statement/v1"
 // SLSAProvenanceType is the SLSA Provenance predicate's type identifier.
 // Per the spec's own parsing rules, this string is always written with
 // the major version only ("v1"), regardless of which SLSA minor version
-// (e.g. 1.2) is actually in effect — the URI resolves to the latest
-// compatible minor version.
+// (e.g. 1.2) is actually in effect.
 const SLSAProvenanceType = "https://slsa.dev/provenance/v1"
 
 // BuildType identifies warden's own build-definition schema — this is
@@ -122,7 +121,7 @@ func BuildStatement(claims *oidc.Claims, opts BuildOptions) (*Statement, error) 
 		now = time.Now()
 	}
 
-	repoURL := "https://github.com/" + claims.Repository
+	definition, builder, invocationID := identityFromClaims(claims)
 
 	stmt := &Statement{
 		Type: StatementType,
@@ -131,33 +130,11 @@ func BuildStatement(claims *oidc.Claims, opts BuildOptions) (*Statement, error) 
 		},
 		PredicateType: SLSAProvenanceType,
 		Predicate: Predicate{
-			BuildDefinition: BuildDefinition{
-				BuildType: BuildType,
-				ExternalParameters: map[string]string{
-					"repository": repoURL,
-					"ref":        claims.Ref,
-					"workflow":   claims.WorkflowRef,
-				},
-				InternalParameters: map[string]string{
-					"runnerEnvironment": claims.RunnerEnvironment,
-					"eventName":         claims.EventName,
-					"actor":             claims.Actor,
-				},
-				ResolvedDependencies: []ResourceDescriptor{
-					{
-						URI:    fmt.Sprintf("git+%s@%s", repoURL, claims.Ref),
-						Digest: map[string]string{"gitCommit": claims.SHA},
-					},
-				},
-			},
+			BuildDefinition: definition,
 			RunDetails: RunDetails{
-				// warden's own builder.id convention: a URI built from
-				// the OIDC-verified job_workflow_ref claim, which already
-				// uniquely identifies the exact workflow file and ref
-				// that ran this job.
-				Builder: Builder{ID: "https://github.com/" + claims.JobWorkflowRef},
+				Builder: builder,
 				Metadata: BuildMetadata{
-					InvocationID: fmt.Sprintf("%s/actions/runs/%s", repoURL, claims.RunID),
+					InvocationID: invocationID,
 					StartedOn:    now.UTC().Format(time.RFC3339),
 				},
 			},
@@ -173,6 +150,43 @@ func BuildStatement(claims *oidc.Claims, opts BuildOptions) (*Statement, error) 
 	}
 
 	return stmt, nil
+}
+
+// identityFromClaims derives every identity-bearing field of a statement
+// from GitHub's OIDC claims. BuildStatement uses it to produce those
+// fields and VerifyBinding uses it to check them against a GitHub-signed
+// token, so the two can never drift apart.
+func identityFromClaims(claims *oidc.Claims) (BuildDefinition, Builder, string) {
+	repoURL := "https://github.com/" + claims.Repository
+
+	definition := BuildDefinition{
+		BuildType: BuildType,
+		ExternalParameters: map[string]string{
+			"repository": repoURL,
+			"ref":        claims.Ref,
+			"workflow":   claims.WorkflowRef,
+		},
+		InternalParameters: map[string]string{
+			"runnerEnvironment": claims.RunnerEnvironment,
+			"eventName":         claims.EventName,
+			"actor":             claims.Actor,
+		},
+		ResolvedDependencies: []ResourceDescriptor{
+			{
+				URI:    fmt.Sprintf("git+%s@%s", repoURL, claims.Ref),
+				Digest: map[string]string{"gitCommit": claims.SHA},
+			},
+		},
+	}
+
+	// warden's own builder.id convention: a URI built from the
+	// OIDC-verified job_workflow_ref claim, which already uniquely
+	// identifies the exact workflow file and ref that ran this job.
+	builder := Builder{ID: "https://github.com/" + claims.JobWorkflowRef}
+
+	invocationID := fmt.Sprintf("%s/actions/runs/%s", repoURL, claims.RunID)
+
+	return definition, builder, invocationID
 }
 
 func sha256File(path string) (string, error) {
