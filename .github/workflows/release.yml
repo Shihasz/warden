@@ -1,0 +1,145 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Dry run: a PR that changes this file builds, signs, and verifies
+  # everything below but publishes nothing, so the release machinery is
+  # exercised for real before a tag (which may be immutable) depends on it.
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+
+# Deny everything by default; the job grants only what it needs.
+permissions: {}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # create the release and upload its assets
+      id-token: write # request the OIDC token warden's attestations bind to
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # full history, to check the tag against main
+
+      - name: Determine version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            echo "version=v0.0.0-dryrun" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! [[ "$REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::tag '$REF_NAME' is not a semantic version such as v1.2.3 or v1.2.3-rc.1"
+            exit 1
+          fi
+          echo "version=$REF_NAME" >> "$GITHUB_OUTPUT"
+          if [[ "$REF_NAME" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify the tagged commit is on main
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::the tagged commit is not an ancestor of main; releases are only cut from main"
+            exit 1
+          fi
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Vet and test
+        run: |
+          go vet ./...
+          go test ./... -race
+
+      - name: Build binaries
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir dist
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" \
+              go build -trimpath \
+                -ldflags "-s -w -X main.version=${VERSION}" \
+                -o "dist/warden_${VERSION}_linux_${arch}" ./cmd/warden
+          done
+          # The amd64 build runs on this runner, so it also generates the
+          # SBOM and signs everything. The signer is the binary being released.
+          test "$("dist/warden_${VERSION}_linux_amd64" --version)" = "warden version ${VERSION}"
+
+      - name: Generate SBOM and checksums
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          "dist/warden_${VERSION}_linux_amd64" sbom generate \
+            --go-mod go.mod --go-sum go.sum --name warden \
+            -o "dist/warden_${VERSION}_sbom.cdx.json"
+          (cd dist && sha256sum -- warden_* > SHA256SUMS)
+          cat dist/SHA256SUMS
+
+      - name: Sign and verify provenance attestations
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          signer="dist/warden_${VERSION}_linux_amd64"
+          for f in \
+            "dist/warden_${VERSION}_linux_amd64" \
+            "dist/warden_${VERSION}_linux_arm64" \
+            "dist/warden_${VERSION}_sbom.cdx.json"; do
+            "$signer" attest sign --artifact "$f" --artifact-name "$(basename "$f")"
+            # Verify immediately, against the identity this very run claims.
+            "$signer" attest verify \
+              --attestation "$f.intoto.jsonl" \
+              --pubkey "$f.intoto.jsonl.pub" \
+              --artifact "$f" \
+              --expect-repository "https://github.com/${REPO}" \
+              --expect-ref "$REF"
+          done
+          ls -l dist
+
+      - name: Upload dry-run output
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-dry-run
+          path: dist/
+          if-no-files-found: error
+
+      - name: Publish release
+        if: github.event_name == 'push'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          args=(--verify-tag --draft --title "$VERSION" --generate-notes)
+          if [ "$PRERELEASE" = "true" ]; then
+            args+=(--prerelease)
+          fi
+          # Create as a draft with every asset attached, and only then
+          # publish: with immutable releases enabled, publishing locks the
+          # release, so nothing may be missing at that point.
+          gh release create "$VERSION" "${args[@]}" dist/*
+          gh release edit "$VERSION" --draft=false
