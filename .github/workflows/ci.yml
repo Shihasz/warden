@@ -143,3 +143,57 @@ jobs:
             sbom generate --go-mod go.mod --go-sum go.sum --name warden \
             > "$RUNNER_TEMP/sbom.json"
           grep -q '"bomFormat": "CycloneDX"' "$RUNNER_TEMP/sbom.json"
+
+  action-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Gate that should pass
+        id: ok
+        uses: ./
+        with:
+          version: v0.1.0-rc.1
+          policy: .github/action-test-policy.yaml
+          go-mod: go.mod
+          go-sum: go.sum
+          output-dir: ${{ runner.temp }}/gate-ok
+
+      - name: Check the passing run's outputs
+        env:
+          RESULT: ${{ steps.ok.outputs.result-path }}
+        run: |
+          set -euo pipefail
+          grep -q '"passed": true' "$RESULT"
+
+      - name: Gate that must block
+        id: deny
+        continue-on-error: true
+        uses: ./
+        with:
+          version: v0.1.0-rc.1
+          policy: .github/action-test-policy-deny.yaml
+          go-mod: go.mod
+          go-sum: go.sum
+          output-dir: ${{ runner.temp }}/gate-deny
+
+      - name: Check the blocking run really failed on the policy
+        env:
+          OUTCOME: ${{ steps.deny.outcome }}
+        run: |
+          set -euo pipefail
+          test "$OUTCOME" = "failure"
+          # Failing for the right reason: the policy result exists and says so.
+          grep -q '"passed": false' "$RUNNER_TEMP/gate-deny/policy-result.json"
+
+      - name: A floating version must be refused
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          out="$(VERSION=latest bash scripts/install-warden.sh 2>&1)"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          grep -q "exact release tag" <<<"$out"

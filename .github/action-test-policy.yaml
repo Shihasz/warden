@@ -1,0 +1,12 @@
+version: 1
+
+vulnerabilities:
+  denySeverity: critical
+  requireKnownExploit: true
+
+licenses:
+  denyCategories:
+    - copyleft
+
+provenance:
+  required: false
