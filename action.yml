@@ -1,0 +1,97 @@
+name: warden supply-chain gate
+description: Install a verified warden release, generate an SBOM, and enforce a supply-chain policy.
+author: Shihasz
+
+inputs:
+  version:
+    description: >-
+      Exact warden release tag to install, for example v0.1.0. There is
+      deliberately no "latest": a gate that silently changes version is not
+      a gate.
+    required: true
+  policy:
+    description: Path to the warden policy YAML file.
+    required: true
+  name:
+    description: Project name recorded in the SBOM. Defaults to the repository name.
+    required: false
+    default: ""
+  go-mod:
+    description: Path to go.mod.
+    required: false
+    default: ""
+  go-sum:
+    description: Path to go.sum (required with go-mod).
+    required: false
+    default: ""
+  npm-lock:
+    description: Path to package-lock.json.
+    required: false
+    default: ""
+  pip-requirements:
+    description: Path to requirements.txt.
+    required: false
+    default: ""
+  poetry-lock:
+    description: Path to poetry.lock.
+    required: false
+    default: ""
+  attestation:
+    description: Path to a .intoto.jsonl provenance attestation to verify and evaluate.
+    required: false
+    default: ""
+  pubkey:
+    description: Path to the public key matching the attestation (required with attestation).
+    required: false
+    default: ""
+  artifact:
+    description: Path to the build artifact whose digest is checked against the attestation.
+    required: false
+    default: ""
+  output-dir:
+    description: Directory the SBOM and policy result are written to.
+    required: false
+    default: warden-reports
+  token:
+    description: GitHub token used to download and verify the warden release.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  sbom-path:
+    description: Path to the generated SBOM.
+    value: ${{ steps.gate.outputs.sbom-path }}
+  result-path:
+    description: Path to the policy result JSON.
+    value: ${{ steps.gate.outputs.result-path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install warden
+      id: install
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        VERSION: ${{ inputs.version }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: bash "$ACTION_PATH/scripts/install-warden.sh"
+
+    - name: Run the gate
+      id: gate
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        WARDEN: ${{ steps.install.outputs.bin }}
+        NAME: ${{ inputs.name != '' && inputs.name || github.event.repository.name }}
+        POLICY: ${{ inputs.policy }}
+        GO_MOD: ${{ inputs.go-mod }}
+        GO_SUM: ${{ inputs.go-sum }}
+        NPM_LOCK: ${{ inputs.npm-lock }}
+        PIP_REQUIREMENTS: ${{ inputs.pip-requirements }}
+        POETRY_LOCK: ${{ inputs.poetry-lock }}
+        ATTESTATION: ${{ inputs.attestation }}
+        PUBKEY: ${{ inputs.pubkey }}
+        ARTIFACT: ${{ inputs.artifact }}
+        OUT_DIR: ${{ inputs.output-dir }}
+      run: bash "$ACTION_PATH/scripts/run-gate.sh"
