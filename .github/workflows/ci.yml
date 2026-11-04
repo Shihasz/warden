@@ -72,38 +72,41 @@ jobs:
         continue-on-error: true
         run: ./bin/warden licenses check --sbom sbom.json -o license-report.json
 
+      - name: Detect whether this run can mint an OIDC token
+        id: oidc
+        run: |
+          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Sign provenance attestation
+        if: steps.oidc.outputs.available == 'true'
         continue-on-error: true
         run: ./bin/warden attest sign --artifact bin/warden --artifact-name warden
 
       - name: Verify provenance attestation (sanity check)
+        if: steps.oidc.outputs.available == 'true'
         continue-on-error: true
+        env:
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
         run: |
           ./bin/warden attest verify \
             --attestation bin/warden.intoto.jsonl \
             --pubkey bin/warden.intoto.jsonl.pub \
             --artifact bin/warden \
-            --expect-repository https://github.com/${{ github.repository }} \
-            --expect-ref ${{ github.ref }}
+            --expect-repository "https://github.com/${REPO}" \
+            --expect-ref "$REF"
 
       - name: Enforce supply-chain policy
-        # This is the real gate, so there is no continue-on-error. Pull
-        # requests use a policy without the branch-ref pin, because their
-        # OIDC ref claim is refs/pull/<n>/merge rather than refs/heads/main.
+        # The real gate: no continue-on-error. The reports above are
+        # informational; this step decides whether the pipeline passes.
         env:
           EVENT_NAME: ${{ github.event_name }}
-        run: |
-          POLICY=warden-policy.yaml
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            POLICY=warden-policy-pr.yaml
-          fi
-          ./bin/warden policy check \
-            --sbom sbom.json \
-            --policy "$POLICY" \
-            --attestation bin/warden.intoto.jsonl \
-            --pubkey bin/warden.intoto.jsonl.pub \
-            --artifact bin/warden \
-            -o policy-result.json
+          OIDC_AVAILABLE: ${{ steps.oidc.outputs.available }}
+        run: bash scripts/ci-gate.sh
 
       - name: Upload supply-chain reports
         if: always()
