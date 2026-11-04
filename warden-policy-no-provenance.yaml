@@ -1,0 +1,17 @@
+# Used only for pull_request runs that cannot obtain a GitHub OIDC token:
+# PRs from forks, and Dependabot PRs, which GitHub treats as forks. Without
+# a token there can be no bound provenance, so it isn't required here.
+# Pushes and release tags never use this policy; they always require
+# provenance under warden-policy.yaml.
+version: 1
+
+vulnerabilities:
+  denySeverity: critical
+  requireKnownExploit: true
+
+licenses:
+  denyCategories:
+    - copyleft
+
+provenance:
+  required: false
