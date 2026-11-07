@@ -12,14 +12,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Shihasz/warden/internal/license/depsdev"
 	"github.com/Shihasz/warden/internal/policy"
 	"github.com/Shihasz/warden/internal/provenance/attest"
 	"github.com/Shihasz/warden/internal/provenance/dsse"
 	"github.com/Shihasz/warden/internal/sbom"
 	"github.com/Shihasz/warden/internal/vuln"
 	"github.com/Shihasz/warden/internal/vuln/kev"
-	"github.com/Shihasz/warden/internal/vuln/osv"
 )
 
 func newPolicyCmd() *cobra.Command {
@@ -104,20 +102,24 @@ func runPolicyCheck(cmd *cobra.Command, opts *policyCheckOptions) error {
 	ctx, cancel := commandContext(cmd)
 	defer cancel()
 
+	ds, err := newDataSources(cmd)
+	if err != nil {
+		return err
+	}
+
 	var catalog *kev.Catalog
 	if !opts.noKEV {
 		if opts.kevFile != "" {
 			catalog, err = kev.LoadFile(opts.kevFile)
 		} else {
-			catalog, err = kev.FetchAndCache(ctx, opts.kevCache, opts.kevMaxAge, stderrWarnf(cmd))
+			catalog, err = kev.FetchAndCacheFrom(ctx, ds.kevFeed, ds.kevCachePath(opts.kevCache), opts.kevMaxAge, stderrWarnf(cmd))
 		}
 		if err != nil {
 			return fmt.Errorf("load KEV catalog: %w", err)
 		}
 	}
 
-	osvClient := osv.NewClient()
-	vulnFindings, vulnSkipped, err := vuln.Scan(ctx, osvClient, catalog, bom.Components)
+	vulnFindings, vulnSkipped, err := vuln.Scan(ctx, ds.osvClient, catalog, bom.Components)
 	if err != nil {
 		return fmt.Errorf("scan vulnerabilities: %w", err)
 	}
@@ -125,8 +127,7 @@ func runPolicyCheck(cmd *cobra.Command, opts *policyCheckOptions) error {
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warden: skipped vulnerability scan for %s@%s: %s\n", s.Component.Name, s.Component.Version, s.Reason)
 	}
 
-	licenseClient := depsdev.NewClient()
-	licenseResults, licenseSkipped, err := licenseClient.Lookup(ctx, bom.Components)
+	licenseResults, licenseSkipped, err := ds.depsdevClient.Lookup(ctx, bom.Components)
 	if err != nil {
 		return fmt.Errorf("look up licenses: %w", err)
 	}

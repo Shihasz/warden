@@ -81,6 +81,17 @@ func WithVulnBaseURL(url string) ClientOption {
 	return func(c *Client) { c.vulnBaseURL = url }
 }
 
+// WithBaseURL points the client at an OSV-compatible API rooted at root
+// (for example a private mirror, or a test server), using OSV's standard
+// paths beneath it.
+func WithBaseURL(root string) ClientOption {
+	root = strings.TrimRight(root, "/")
+	return func(c *Client) {
+		c.queryBatchURL = root + "/v1/querybatch"
+		c.vulnBaseURL = root + "/v1/vulns/"
+	}
+}
+
 // NewClient returns a Client targeting the real OSV.dev API by default;
 // apply options to override any of that.
 func NewClient(opts ...ClientOption) *Client {

@@ -105,7 +105,15 @@ func (w Warnf) printf(format string, args ...any) {
 // fails to load is treated as a miss, and a failure to write the cache is
 // reported through warnf without discarding the fetched catalog.
 func FetchAndCache(ctx context.Context, cachePath string, maxAge time.Duration, warnf Warnf) (*Catalog, error) {
-	return fetchAndCache(ctx, FeedURL, cachePath, maxAge, warnf)
+	return FetchAndCacheFrom(ctx, FeedURL, cachePath, maxAge, warnf)
+}
+
+// FetchAndCacheFrom is FetchAndCache against an arbitrary catalog URL,
+// for tests and private mirrors. Callers pointing it at a non-default URL
+// should also use a cache path of their own, so the two catalogs can
+// never be mixed up.
+func FetchAndCacheFrom(ctx context.Context, feedURL, cachePath string, maxAge time.Duration, warnf Warnf) (*Catalog, error) {
+	return fetchAndCache(ctx, feedURL, cachePath, maxAge, warnf)
 }
 
 // fetchAndCache is the testable core of FetchAndCache — it takes the feed

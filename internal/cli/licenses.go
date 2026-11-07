@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Shihasz/warden/internal/license/classify"
-	"github.com/Shihasz/warden/internal/license/depsdev"
 	"github.com/Shihasz/warden/internal/sbom"
 )
 
@@ -81,7 +80,11 @@ func runLicensesCheck(cmd *cobra.Command, opts *licensesCheckOptions) error {
 
 	ctx, cancel := commandContext(cmd)
 	defer cancel()
-	client := depsdev.NewClient()
+	ds, err := newDataSources(cmd)
+	if err != nil {
+		return err
+	}
+	client := ds.depsdevClient
 	results, skipped, err := client.Lookup(ctx, bom.Components)
 	if err != nil {
 		return fmt.Errorf("look up licenses: %w", err)

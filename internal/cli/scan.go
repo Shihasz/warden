@@ -12,7 +12,6 @@ import (
 	"github.com/Shihasz/warden/internal/sbom"
 	"github.com/Shihasz/warden/internal/vuln"
 	"github.com/Shihasz/warden/internal/vuln/kev"
-	"github.com/Shihasz/warden/internal/vuln/osv"
 )
 
 type scanOptions struct {
@@ -73,20 +72,24 @@ func runScan(cmd *cobra.Command, opts *scanOptions) error {
 	ctx, cancel := commandContext(cmd)
 	defer cancel()
 
+	ds, err := newDataSources(cmd)
+	if err != nil {
+		return err
+	}
+
 	var catalog *kev.Catalog
 	if !opts.noKEV {
 		if opts.kevFile != "" {
 			catalog, err = kev.LoadFile(opts.kevFile)
 		} else {
-			catalog, err = kev.FetchAndCache(ctx, opts.kevCache, opts.kevMaxAge, stderrWarnf(cmd))
+			catalog, err = kev.FetchAndCacheFrom(ctx, ds.kevFeed, ds.kevCachePath(opts.kevCache), opts.kevMaxAge, stderrWarnf(cmd))
 		}
 		if err != nil {
 			return fmt.Errorf("load KEV catalog: %w", err)
 		}
 	}
 
-	client := osv.NewClient()
-	findings, skipped, err := vuln.Scan(ctx, client, catalog, bom.Components)
+	findings, skipped, err := vuln.Scan(ctx, ds.osvClient, catalog, bom.Components)
 	if err != nil {
 		return fmt.Errorf("scan vulnerabilities: %w", err)
 	}
