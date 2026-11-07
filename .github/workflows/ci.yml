@@ -202,3 +202,22 @@ jobs:
           set -e
           test "$status" -ne 0
           grep -q "exact release tag" <<<"$out"
+
+      - name: Retry helper retries transient failures and gives up on persistent ones
+        run: |
+          set -euo pipefail
+          source scripts/retry.sh
+          export RETRY_DELAY=0
+
+          # Fails twice, then succeeds: retry must get through.
+          counter="$RUNNER_TEMP/flaky-count"
+          echo 0 > "$counter"
+          flaky() { n=$(($(cat "$counter") + 1)); echo "$n" > "$counter"; [ "$n" -ge 3 ]; }
+          retry flaky
+          test "$(cat "$counter")" = 3
+
+          # Always fails: retry must give up instead of looping forever.
+          if RETRY_ATTEMPTS=2 retry false; then
+            echo "retry should have given up" >&2
+            exit 1
+          fi

@@ -11,6 +11,9 @@
 # warden can't verify itself: a tampered binary would simply report success.
 set -euo pipefail
 
+# shellcheck source=scripts/retry.sh
+source "$(dirname "${BASH_SOURCE[0]}")/retry.sh"
+
 : "${VERSION:?VERSION is required}"
 : "${GH_TOKEN:?GH_TOKEN is required}"
 : "${RUNNER_OS:?RUNNER_OS is required}"
@@ -48,7 +51,7 @@ dir="$RUNNER_TEMP/warden-install"
 rm -rf "$dir"
 mkdir -p "$dir"
 
-gh release download "$VERSION" --repo "$WARDEN_REPO" --dir "$dir" \
+retry gh release download "$VERSION" --repo "$WARDEN_REPO" --dir "$dir" --clobber \
   --pattern "$asset" --pattern SHA256SUMS
 
 # 1. Integrity. awk selects the line for exactly this file; sha256sum
@@ -56,7 +59,7 @@ gh release download "$VERSION" --repo "$WARDEN_REPO" --dir "$dir" \
 (cd "$dir" && awk -v a="$asset" '$2 == a' SHA256SUMS | sha256sum -c -)
 
 # 2. Authenticity, rooted in GitHub rather than in warden.
-gh release verify-asset "$VERSION" "$dir/$asset" --repo "$WARDEN_REPO"
+retry gh release verify-asset "$VERSION" "$dir/$asset" --repo "$WARDEN_REPO"
 
 chmod +x "$dir/$asset"
 mv "$dir/$asset" "$dir/warden"
