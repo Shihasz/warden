@@ -1,0 +1,4 @@
+github.com/example/alpha v1.2.3 h1:ZmFrZS1oYXNoLWZvci1lMmUtZml4dHVyZS1hbHBoYQ==
+github.com/example/alpha v1.2.3/go.mod h1:ZmFrZS1nb21vZC1oYXNoLWZvci1hbHBoYS1nb21vZA==
+github.com/example/beta v0.4.0 h1:ZmFrZS1oYXNoLWZvci1lMmUtZml4dHVyZS1iZXRhLW1vZA==
+github.com/example/beta v0.4.0/go.mod h1:ZmFrZS1nb21vZC1oYXNoLWZvci1iZXRhLWdvbW9k
