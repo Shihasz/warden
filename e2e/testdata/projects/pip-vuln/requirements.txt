@@ -1,0 +1,3 @@
+vulnpy==1.0.0
+Flask_Vuln==2.0.0
+safepy==3.0.0

@@ -1,0 +1,4 @@
+github.com/example/safelib v1.5.0 h1:c2FmZWxpYi1maXh0dXJlLWhhc2gtZTJlLTAwMDAwMDAwMDAwMDA=
+github.com/example/safelib v1.5.0/go.mod h1:c2FmZWxpYi1nb21vZC1maXh0dXJlLWhhc2gtZTJlLTAwMDAwMDA=
+github.com/example/vulnlib v1.0.0 h1:dnVsbmxpYi1maXh0dXJlLWhhc2gtZTJlLTAwMDAwMDAwMDAwMDA=
+github.com/example/vulnlib v1.0.0/go.mod h1:dnVsbmxpYi1nb21vZC1maXh0dXJlLWhhc2gtZTJlLTAwMDAwMDA=
