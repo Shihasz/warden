@@ -151,3 +151,59 @@ func TestVulnerabilityGate_SeverityAndExploitMatrix(t *testing.T) {
 		})
 	}
 }
+
+// KEV lists CVE IDs, but OSV records name them in different places: GitHub
+// advisories list the CVE as an alias, while records imported from the NVD
+// are identified by the CVE itself and list no aliases at all.
+func TestVulnerabilityGate_KEVMatchesWhereverTheCVEAppears(t *testing.T) {
+	critical := []osvSeverity{{Type: "CVSS_V3", Score: criticalCVSS}}
+
+	cases := []struct {
+		name        string
+		record      osvVuln
+		exploited   []string
+		wantBlocked bool
+	}{
+		{
+			name:        "CVE listed as the only alias",
+			record:      osvVuln{ID: testVulnID, Aliases: []string{testCVE}, Severity: critical},
+			exploited:   []string{testCVE},
+			wantBlocked: true,
+		},
+		{
+			name:        "record identified by the CVE itself, no aliases",
+			record:      osvVuln{ID: testCVE, Severity: critical},
+			exploited:   []string{testCVE},
+			wantBlocked: true,
+		},
+		{
+			name:        "CVE among several aliases",
+			record:      osvVuln{ID: testVulnID, Aliases: []string{"GHSA-other-0000-0000", testCVE}, Severity: critical},
+			exploited:   []string{testCVE},
+			wantBlocked: true,
+		},
+		{
+			name:        "a different CVE is the exploited one",
+			record:      osvVuln{ID: testVulnID, Aliases: []string{testCVE}, Severity: critical},
+			exploited:   []string{"CVE-2099-9999"},
+			wantBlocked: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			l := newLab(t)
+			l.useProject(t, "go-vuln")
+			l.writeFile(t, "policy.yaml", vulnerabilityPolicy(true))
+			l.OSV.AddRecord(goVulnPURL, tc.record)
+			l.KEV.SetExploited(tc.exploited...)
+
+			l.generateSBOM(t, "--go-mod", "go.mod", "--go-sum", "go.sum")
+
+			gate := l.gate(t, "policy.yaml")
+			if gate.Passed == tc.wantBlocked {
+				t.Fatalf("passed = %v, want blocked = %v; violations: %+v", gate.Passed, tc.wantBlocked, gate.Violations)
+			}
+		})
+	}
+}

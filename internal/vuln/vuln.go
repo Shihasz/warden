@@ -59,6 +59,12 @@ func isKnownExploited(v osv.Vulnerability, catalog *kev.Catalog) bool {
 	if catalog == nil {
 		return false
 	}
+	// The CVE ID can be the record's own ID (records imported from the NVD
+	// are identified by their CVE and list no aliases) or one of its
+	// aliases (GitHub advisories and most other databases).
+	if catalog.IsKnownExploited(v.ID) {
+		return true
+	}
 	for _, alias := range v.Aliases {
 		if catalog.IsKnownExploited(alias) {
 			return true
