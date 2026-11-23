@@ -20,7 +20,7 @@ RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 # distroless/static ships CA certificates (warden makes HTTPS calls to
 # OSV, deps.dev, CISA, and GitHub) and a nonroot user, but no shell, no
 # package manager, and no libc.
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:aafe993665bf6200db38a02c11a9351e782a84b6a45e7f33b6695638c88e3931
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:8ce6dd87e9823c5b48dcfb2c8604714ccb351ce59607327bcc4957448da279b5
 COPY --from=build /out/warden /usr/local/bin/warden
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/warden"]
