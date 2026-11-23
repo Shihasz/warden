@@ -39,6 +39,10 @@ type Vulnerability struct {
 		Type  string `json:"type"`
 		Score string `json:"score"`
 	} `json:"severity"`
+	// DatabaseSpecific is kept raw: its shape is defined by each advisory
+	// database, so it's parsed leniently (see DatabaseSeverity) and can
+	// never make decoding a record fail.
+	DatabaseSpecific json.RawMessage `json:"database_specific,omitempty"`
 }
 
 // Finding pairs a scanned component with the vulnerabilities OSV reported
