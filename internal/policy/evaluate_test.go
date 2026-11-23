@@ -81,15 +81,6 @@ func TestEvaluateVulnerabilities_DisabledRule(t *testing.T) {
 	}
 }
 
-func TestEvaluateVulnerabilities_UnknownSeverityNeverDenies(t *testing.T) {
-	p := VulnerabilityPolicy{DenySeverity: "low"} // lowest threshold — would catch everything parseable
-	findings := []vuln.ComponentFinding{findingWith("no-cvss-data-pkg", "", false)}
-
-	if violations := evaluateVulnerabilities(p, findings); len(violations) != 0 {
-		t.Errorf("got %d violations for a finding with no parseable CVSS data, want 0", len(violations))
-	}
-}
-
 func TestEvaluateLicenses(t *testing.T) {
 	p := LicensePolicy{DenyCategories: []string{"copyleft"}}
 

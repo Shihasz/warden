@@ -19,21 +19,27 @@ type Policy struct {
 }
 
 // VulnerabilityPolicy controls which vulnerability findings cause a
-// denial. A finding is denied when its CVSS base severity is at least
-// DenySeverity, and — if RequireKnownExploit is true — it is also
-// flagged as actively exploited by the CISA KEV catalog. A finding whose
-// severity can't be determined (no CVSS data, or an unsupported/
-// unparseable vector) is never denied by this rule; "we don't know" is
-// deliberately not treated the same as "this is bad".
+// denial. A finding is denied when its severity is at least DenySeverity
+// and, if RequireKnownExploit is true, it is also listed as actively
+// exploited by CISA's KEV catalog.
+//
+// A finding's severity comes from its CVSS v3 vector if it has a usable
+// one, otherwise from the advisory database's own severity label. A
+// finding with neither is "unscored", and UnscoredSeverity decides what
+// happens to it.
 type VulnerabilityPolicy struct {
-	// DenySeverity is the minimum CVSS severity this rule considers at
-	// all: "low", "medium", "high", or "critical". Empty disables the
-	// rule entirely.
+	// DenySeverity is the minimum severity this rule considers at all:
+	// "low", "medium", "high", or "critical". Empty disables the rule.
 	DenySeverity string `yaml:"denySeverity"`
-	// RequireKnownExploit, if true, only denies a finding that is both
-	// at or above DenySeverity AND flagged known-exploited by KEV. If
-	// false, meeting the severity threshold alone is sufficient.
+	// RequireKnownExploit, if true, only denies a finding that is both at
+	// or above DenySeverity AND flagged known-exploited by KEV.
 	RequireKnownExploit bool `yaml:"requireKnownExploit"`
+	// UnscoredSeverity is "deny" (the default when empty) or "ignore".
+	// "deny" treats an unscored finding as meeting DenySeverity, assuming
+	// the worst case, so a vulnerability confirmed as exploited in the
+	// wild can't pass merely because nobody scored it. "ignore" never
+	// denies an unscored finding.
+	UnscoredSeverity string `yaml:"unscoredSeverity"`
 }
 
 // LicensePolicy denies any component whose classified license category
@@ -74,6 +80,12 @@ func Load(path string) (*Policy, error) {
 
 	if p.Version != 1 {
 		return nil, fmt.Errorf("unsupported policy version %d (only version 1 is supported)", p.Version)
+	}
+
+	switch p.Vulnerabilities.UnscoredSeverity {
+	case "", "deny", "ignore":
+	default:
+		return nil, fmt.Errorf("vulnerabilities.unscoredSeverity must be \"deny\" or \"ignore\", got %q", p.Vulnerabilities.UnscoredSeverity)
 	}
 
 	return &p, nil

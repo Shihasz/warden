@@ -44,10 +44,11 @@ type osvSeverity struct {
 }
 
 type osvVuln struct {
-	ID       string        `json:"id"`
-	Summary  string        `json:"summary"`
-	Aliases  []string      `json:"aliases,omitempty"`
-	Severity []osvSeverity `json:"severity,omitempty"`
+	ID               string         `json:"id"`
+	Summary          string         `json:"summary"`
+	Aliases          []string       `json:"aliases,omitempty"`
+	Severity         []osvSeverity  `json:"severity,omitempty"`
+	DatabaseSpecific map[string]any `json:"database_specific,omitempty"`
 }
 
 // mockOSV serves the two OSV endpoints warden uses: POST /v1/querybatch

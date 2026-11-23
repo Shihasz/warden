@@ -2,6 +2,7 @@ package policy
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/Shihasz/warden/internal/license/classify"
 	"github.com/Shihasz/warden/internal/license/depsdev"
@@ -40,6 +41,13 @@ type ProvenanceInput struct {
 
 var severityRank = map[string]int{"none": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
 
+// Where a vulnerability's severity came from.
+const (
+	sourceCVSS3 = "cvss-v3"
+	sourceLabel = "advisory-label"
+	sourceNone  = "unscored"
+)
+
 // Evaluate checks vulnFindings, licenseResults, and prov against p and
 // returns every violation found. It deliberately does not stop at the
 // first violation — a complete report is more useful to someone fixing
@@ -59,38 +67,49 @@ func evaluateVulnerabilities(vp VulnerabilityPolicy, findings []vuln.ComponentFi
 	threshold, ok := severityRank[vp.DenySeverity]
 	if !ok {
 		// An invalid config value disables the rule rather than denying
-		// everything or panicking — Load may reject this up front in a
-		// future revision, but evaluation itself stays conservative.
+		// everything or panicking.
 		return nil
 	}
+	denyUnscored := vp.UnscoredSeverity != "ignore" // deny is the default
 
 	var violations []Violation
 	for _, f := range findings {
 		for _, v := range f.Vulnerabilities {
-			sev, ok := severityOf(v.Vulnerability)
-			if !ok {
-				continue // no usable CVSS data — never treated as a denial
+			sev, source := severityOf(v.Vulnerability)
+
+			var description string
+			if source == sourceNone {
+				if !denyUnscored {
+					continue
+				}
+				// Worst-case assumption: an unscored finding is treated
+				// as meeting the threshold.
+				description = fmt.Sprintf("severity=unscored (treated as meeting %s, per unscoredSeverity)", vp.DenySeverity)
+			} else {
+				if severityRank[sev] < threshold {
+					continue
+				}
+				description = fmt.Sprintf("severity=%s (%s)", sev, source)
 			}
-			if severityRank[sev] < threshold {
-				continue
-			}
+
 			if vp.RequireKnownExploit && !v.KnownExploited {
 				continue
 			}
 			violations = append(violations, Violation{
 				Rule:    "vulnerability",
 				Subject: fmt.Sprintf("%s@%s", f.Component.Name, f.Component.Version),
-				Message: fmt.Sprintf("%s: severity=%s knownExploited=%v", v.ID, sev, v.KnownExploited),
+				Message: fmt.Sprintf("%s: %s knownExploited=%v", v.ID, description, v.KnownExploited),
 			})
 		}
 	}
 	return violations
 }
 
-// severityOf extracts a CVSS v3.x base severity from v's severity
-// entries, trying each until one parses — OSV records can carry more
-// than one scoring system, and ecosystems vary in which they publish.
-func severityOf(v osv.Vulnerability) (string, bool) {
+// severityOf resolves a vulnerability's severity and where it came from:
+// its CVSS v3 vector if one scores, otherwise the advisory database's own
+// label, otherwise sourceNone. CVSS wins because warden computes it
+// itself from the vector; a database label is a weaker, secondhand claim.
+func severityOf(v osv.Vulnerability) (severity, source string) {
 	for _, s := range v.Severity {
 		if s.Type != "CVSS_V3" {
 			continue
@@ -103,9 +122,28 @@ func severityOf(v osv.Vulnerability) (string, bool) {
 		if err != nil {
 			continue
 		}
-		return cvss.Severity(score), true
+		return cvss.Severity(score), sourceCVSS3
 	}
-	return "", false
+	if label := labelSeverity(v.DatabaseSeverity()); label != "" {
+		return label, sourceLabel
+	}
+	return "", sourceNone
+}
+
+// labelSeverity maps an advisory database's qualitative label onto warden's
+// severity names. GitHub's advisories say "MODERATE" where CVSS says medium.
+func labelSeverity(raw string) string {
+	switch strings.ToUpper(strings.TrimSpace(raw)) {
+	case "CRITICAL":
+		return "critical"
+	case "HIGH":
+		return "high"
+	case "MODERATE", "MEDIUM":
+		return "medium"
+	case "LOW":
+		return "low"
+	}
+	return ""
 }
 
 func evaluateLicenses(lp LicensePolicy, results []depsdev.LicenseResult) []Violation {
