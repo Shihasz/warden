@@ -87,6 +87,10 @@ func runPolicyCheck(cmd *cobra.Command, opts *policyCheckOptions) error {
 		return fmt.Errorf("load policy: %w", err)
 	}
 
+	if p.EnforcesNothing() {
+		stderrWarnf(cmd)("policy %s enables no rules, so nothing will be enforced", opts.policyPath)
+	}
+
 	data, err := os.ReadFile(opts.sbomPath)
 	if err != nil {
 		return fmt.Errorf("read SBOM file: %w", err)
