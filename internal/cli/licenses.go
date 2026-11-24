@@ -60,6 +60,11 @@ type licenseFinding struct {
 }
 
 func runLicensesCheck(cmd *cobra.Command, opts *licensesCheckOptions) error {
+	for _, c := range opts.denyCategories {
+		if !classify.Valid(classify.Category(c)) {
+			return fmt.Errorf("--deny-category %q is not one of %s", c, classify.List())
+		}
+	}
 	data, err := os.ReadFile(opts.sbomPath)
 	if err != nil {
 		return fmt.Errorf("read SBOM file: %w", err)

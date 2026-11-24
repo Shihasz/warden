@@ -10,7 +10,10 @@
 // than guess.
 package classify
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // Category is a broad license classification.
 type Category string
@@ -159,4 +162,24 @@ func Classify(licenses []string) Category {
 		result = maxCategory(result, c)
 	}
 	return result
+}
+
+// Categories lists every category a policy or flag can name.
+func Categories() []Category {
+	return []Category{Permissive, WeakCopyleft, Copyleft, Unknown}
+}
+
+// Valid reports whether c is a category warden defines.
+func Valid(c Category) bool {
+	return slices.Contains(Categories(), c)
+}
+
+// List returns the categories as a comma-separated string, for messages.
+func List() string {
+	cats := Categories()
+	names := make([]string, len(cats))
+	for i, c := range cats {
+		names[i] = string(c)
+	}
+	return strings.Join(names, ", ")
 }

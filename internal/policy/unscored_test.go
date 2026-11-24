@@ -107,16 +107,16 @@ func TestEvaluateVulnerabilities_MalformedLabelIsUnscored(t *testing.T) {
 
 func TestLoad_UnscoredSeverityValues(t *testing.T) {
 	for _, value := range []string{"", "deny", "ignore"} {
-		content := "version: 1\n"
+		content := "version: 1\nvulnerabilities:\n  denySeverity: critical\n"
 		if value != "" {
-			content += "vulnerabilities:\n  unscoredSeverity: " + value + "\n"
+			content += "  unscoredSeverity: " + value + "\n"
 		}
 		if _, err := Load(writePolicyFixture(t, content)); err != nil {
 			t.Errorf("Load() with unscoredSeverity %q error = %v, want it accepted", value, err)
 		}
 	}
 	for _, value := range []string{"maybe", "Deny", "true", "warn"} {
-		content := "version: 1\nvulnerabilities:\n  unscoredSeverity: " + value + "\n"
+		content := "version: 1\nvulnerabilities:\n  denySeverity: critical\n  unscoredSeverity: " + value + "\n"
 		if _, err := Load(writePolicyFixture(t, content)); err == nil {
 			t.Errorf("Load() with unscoredSeverity %q should be rejected, got nil error", value)
 		}
