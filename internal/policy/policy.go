@@ -23,6 +23,7 @@ type Policy struct {
 	Vulnerabilities VulnerabilityPolicy `yaml:"vulnerabilities"`
 	Licenses        LicensePolicy       `yaml:"licenses"`
 	Provenance      ProvenancePolicy    `yaml:"provenance"`
+	Coverage        CoveragePolicy      `yaml:"coverage"`
 }
 
 // VulnerabilityPolicy controls which vulnerability findings cause a
@@ -71,6 +72,17 @@ type ProvenancePolicy struct {
 	MinLevel           int    `yaml:"minLevel"`
 	ExpectedRepository string `yaml:"expectedRepository"`
 	ExpectedRef        string `yaml:"expectedRef"`
+}
+
+// CoveragePolicy decides what happens when a rule the policy enables
+// could not examine a component: a version-less dependency, or a data
+// source that failed to answer. A gate that quietly skips what it can't
+// check reports success for exactly the components nobody examined.
+type CoveragePolicy struct {
+	// Unevaluated is "deny" (the default when empty) or "warn". "deny"
+	// turns each unexamined component into a violation. "warn" records it
+	// in the result's warnings without failing the gate.
+	Unevaluated string `yaml:"unevaluated"`
 }
 
 var validSeverities = []string{"low", "medium", "high", "critical"}
@@ -140,6 +152,14 @@ func (p *Policy) validate() error {
 	}
 	if !pp.Required && (pp.MinLevel != 0 || pp.ExpectedRepository != "" || pp.ExpectedRef != "") {
 		problems = append(problems, "provenance.minLevel, expectedRepository, and expectedRef are ignored unless provenance.required is true")
+	}
+
+	cp := p.Coverage
+	if cp.Unevaluated != "" && cp.Unevaluated != "deny" && cp.Unevaluated != "warn" {
+		problems = append(problems, fmt.Sprintf("coverage.unevaluated must be \"deny\" or \"warn\", got %q", cp.Unevaluated))
+	}
+	if cp.Unevaluated != "" && vp.DenySeverity == "" && len(p.Licenses.DenyCategories) == 0 {
+		problems = append(problems, "coverage.unevaluated has no effect unless a vulnerability or license rule is enabled")
 	}
 
 	if len(problems) == 0 {

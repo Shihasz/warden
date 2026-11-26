@@ -144,12 +144,19 @@ func runPolicyCheck(cmd *cobra.Command, opts *policyCheckOptions) error {
 		return fmt.Errorf("load provenance attestation: %w", err)
 	}
 
-	result := policy.Evaluate(p, vulnFindings, licenseResults, provInput)
+	result := policy.Evaluate(p, policy.Inputs{
+		Vulnerabilities: vulnFindings,
+		VulnSkipped:     vulnSkipped,
+		Licenses:        licenseResults,
+		LicenseSkipped:  licenseSkipped,
+		Provenance:      provInput,
+	})
 
 	out, err := json.MarshalIndent(struct {
 		Passed     bool               `json:"passed"`
 		Violations []policy.Violation `json:"violations"`
-	}{Passed: result.Passed(), Violations: result.Violations}, "", "  ")
+		Warnings   []policy.Violation `json:"warnings,omitempty"`
+	}{Passed: result.Passed(), Violations: result.Violations, Warnings: result.Warnings}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal policy result: %w", err)
 	}
