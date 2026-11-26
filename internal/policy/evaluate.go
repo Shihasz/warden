@@ -7,6 +7,7 @@ import (
 	"github.com/Shihasz/warden/internal/license/classify"
 	"github.com/Shihasz/warden/internal/license/depsdev"
 	"github.com/Shihasz/warden/internal/provenance/attest"
+	"github.com/Shihasz/warden/internal/sbom"
 	"github.com/Shihasz/warden/internal/vuln"
 	"github.com/Shihasz/warden/internal/vuln/cvss"
 	"github.com/Shihasz/warden/internal/vuln/osv"
@@ -22,6 +23,21 @@ type Violation struct {
 // Result is the outcome of evaluating a Policy.
 type Result struct {
 	Violations []Violation `json:"violations"`
+	// Warnings are coverage gaps the policy chose not to treat as
+	// violations (coverage.unevaluated: warn). They never fail the gate.
+	Warnings []Violation `json:"warnings,omitempty"`
+}
+
+// Inputs is everything Evaluate judges: what the scans found, and also
+// what they could not look at.
+type Inputs struct {
+	Vulnerabilities []vuln.ComponentFinding
+	// VulnSkipped lists components the vulnerability scan could not query.
+	VulnSkipped []osv.Skipped
+	Licenses    []depsdev.LicenseResult
+	// LicenseSkipped lists components the license lookup could not resolve.
+	LicenseSkipped []depsdev.Skipped
+	Provenance     ProvenanceInput
 }
 
 // Passed reports whether evaluation found zero violations.
@@ -48,16 +64,76 @@ const (
 	sourceNone  = "unscored"
 )
 
-// Evaluate checks vulnFindings, licenseResults, and prov against p and
-// returns every violation found. It deliberately does not stop at the
-// first violation — a complete report is more useful to someone fixing
-// their pipeline than a single failure that hides the rest.
-func Evaluate(p *Policy, vulnFindings []vuln.ComponentFinding, licenseResults []depsdev.LicenseResult, prov ProvenanceInput) Result {
+// Evaluate checks in against p and returns every violation found. It
+// deliberately does not stop at the first violation: a complete report is
+// more useful to someone fixing their pipeline than a single failure that
+// hides the rest.
+func Evaluate(p *Policy, in Inputs) Result {
 	var violations []Violation
-	violations = append(violations, evaluateVulnerabilities(p.Vulnerabilities, vulnFindings)...)
-	violations = append(violations, evaluateLicenses(p.Licenses, licenseResults)...)
-	violations = append(violations, evaluateProvenance(p.Provenance, prov)...)
-	return Result{Violations: violations}
+	violations = append(violations, evaluateVulnerabilities(p.Vulnerabilities, in.Vulnerabilities)...)
+	violations = append(violations, evaluateLicenses(p.Licenses, in.Licenses)...)
+	violations = append(violations, evaluateProvenance(p.Provenance, in.Provenance)...)
+
+	gaps, warnings := evaluateCoverage(p, in)
+	violations = append(violations, gaps...)
+	return Result{Violations: violations, Warnings: warnings}
+}
+
+// evaluateCoverage turns "no check could look at this component" into a
+// finding. Only gaps in rules the policy actually enables count: a failed
+// license lookup is irrelevant when no license rule is on.
+//
+// One entry is produced per component, listing every check that couldn't
+// cover it. Under coverage.unevaluated: warn the entries are returned as
+// warnings instead of violations.
+func evaluateCoverage(p *Policy, in Inputs) (violations, warnings []Violation) {
+	type gap struct {
+		subject string
+		reasons []string
+	}
+	var order []string
+	gaps := map[string]*gap{}
+
+	add := func(c sbom.Component, check, reason string) {
+		subject := c.Name
+		if c.Version != "" {
+			subject += "@" + c.Version
+		}
+		key := c.PURL
+		if key == "" {
+			key = subject
+		}
+		g, ok := gaps[key]
+		if !ok {
+			g = &gap{subject: subject}
+			gaps[key] = g
+			order = append(order, key)
+		}
+		// Reasons can carry error text with newlines; keep one line each.
+		g.reasons = append(g.reasons, fmt.Sprintf("%s (%s)", check, strings.Join(strings.Fields(reason), " ")))
+	}
+
+	if p.Vulnerabilities.DenySeverity != "" {
+		for _, s := range in.VulnSkipped {
+			add(s.Component, "vulnerability scan", s.Reason)
+		}
+	}
+	if len(p.Licenses.DenyCategories) > 0 {
+		for _, s := range in.LicenseSkipped {
+			add(s.Component, "license check", s.Reason)
+		}
+	}
+
+	for _, key := range order {
+		g := gaps[key]
+		v := Violation{Rule: "coverage", Subject: g.subject, Message: "not evaluated by: " + strings.Join(g.reasons, "; ")}
+		if p.Coverage.Unevaluated == "warn" {
+			warnings = append(warnings, v)
+		} else {
+			violations = append(violations, v)
+		}
+	}
+	return violations, warnings
 }
 
 func evaluateVulnerabilities(vp VulnerabilityPolicy, findings []vuln.ComponentFinding) []Violation {

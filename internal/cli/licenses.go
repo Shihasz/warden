@@ -21,9 +21,10 @@ func newLicensesCmd() *cobra.Command {
 }
 
 type licensesCheckOptions struct {
-	sbomPath       string
-	denyCategories []string
-	output         string
+	sbomPath         string
+	denyCategories   []string
+	output           string
+	allowUnevaluated bool
 }
 
 func newLicensesCheckCmd() *cobra.Command {
@@ -47,6 +48,7 @@ func newLicensesCheckCmd() *cobra.Command {
 	f.StringVar(&opts.sbomPath, "sbom", "", "path to a CycloneDX SBOM JSON file (required)")
 	f.StringSliceVar(&opts.denyCategories, "deny-category", nil, "comma-separated categories to fail on: permissive,weak-copyleft,copyleft,unknown")
 	f.StringVarP(&opts.output, "output", "o", "", "output file path (defaults to stdout)")
+	f.BoolVar(&opts.allowUnevaluated, "allow-unevaluated", false, "don't fail when some components could not be looked up (they are skipped with a warning)")
 
 	_ = cmd.MarkFlagRequired("sbom")
 
@@ -134,6 +136,10 @@ func runLicensesCheck(cmd *cobra.Command, opts *licensesCheckOptions) error {
 			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "  - %s@%s: %v (%s)\n", v.Component.Name, v.Component.Version, v.Licenses, v.Category)
 		}
 		return fmt.Errorf("%d component(s) violate denied license categories", len(violations))
+	}
+
+	if len(deny) > 0 && len(skipped) > 0 && !opts.allowUnevaluated {
+		return fmt.Errorf("%d component(s) could not be checked against --deny-category (pass --allow-unevaluated to accept that)", len(skipped))
 	}
 
 	return nil

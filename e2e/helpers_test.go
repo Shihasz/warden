@@ -34,6 +34,7 @@ type violation struct {
 type gateResult struct {
 	Passed     bool        `json:"passed"`
 	Violations []violation `json:"violations"`
+	Warnings   []violation `json:"warnings"`
 }
 
 // gate runs `warden policy check` over the lab's sbom.json. It also checks
@@ -74,4 +75,12 @@ func (m *mockOSV) AddRecord(purl string, v osvVuln) {
 	defer m.mu.Unlock()
 	m.vulns[v.ID] = v
 	m.byPURL[purl] = append(m.byPURL[purl], v.ID)
+}
+
+// DropRecord makes a vulnerability record disappear while queries still
+// reference it, as when a database withdraws a record mid-scan.
+func (m *mockOSV) DropRecord(id string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.vulns, id)
 }
